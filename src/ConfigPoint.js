@@ -195,15 +195,15 @@ const BaseImplementation = {
   }
 };
 
-const ConfigPointService = Object.assign(
-  { name: 'ConfigPointService', create: () => ConfigPointService, },
+const ConfigPoint = Object.assign(
+  { name: 'ConfigPoint', create: () => ConfigPoint, },
   BaseImplementation,
 );
 
 
-export { ConfigPointService };
-export default ConfigPointService;
+export { ConfigPoint };
+export default ConfigPoint;
 
 // TODO - find a way to allow loading a safe list of configuration elements
 // Make this globally available for now until a better method is found
-// window.ConfigPointService = ConfigPointService;
+// window.ConfigPoint = ConfigPoint;

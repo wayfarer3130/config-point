@@ -1,6 +1,6 @@
-import { ConfigPointService, mergeAssign, mergeCreate, mergeObject, ConfigPointOp } from './ConfigPointService.js';
+import { ConfigPoint, mergeAssign, mergeCreate, mergeObject, ConfigPointOp } from './ConfigPoint.js';
 
-describe('ConfigPointService.js', () => {
+describe('ConfigPoint.js', () => {
   const CONFIG_NAME = 'testConfigPoint';
   const BASE_CONFIG = {
     a: '1',
@@ -19,7 +19,7 @@ describe('ConfigPointService.js', () => {
     // Default object behaviour is update
     obj: { v2: 'v2New', v3: 'v3' },
     // Over-ride operation to replace entire item
-    obj2: { v2: 'v2New', v3: 'v3', ...ConfigPointService.REPLACE },
+    obj2: { v2: 'v2New', v3: 'v3', ...ConfigPoint.REPLACE },
     // Default function behaviour is replace, which in this case means add new.
     subFunc: (a, b) => a - b,
   };
@@ -37,7 +37,7 @@ describe('ConfigPointService.js', () => {
 
 
   beforeEach(() => {
-    ConfigPointService.clear();
+    ConfigPoint.clear();
     jest.clearAllMocks();
   });
 
@@ -89,14 +89,14 @@ describe('ConfigPointService.js', () => {
 
   describe('addConfig()', () => {
     it('Adds an extension level', () => {
-      const config = ConfigPointService.addConfig(CONFIG_NAME, BASE_CONFIG);
+      const config = ConfigPoint.addConfig(CONFIG_NAME, BASE_CONFIG);
       expect(config).toMatchObject(BASE_CONFIG);
     });
   });
 
   describe('extendConfig()', () => {
     it('updates the config data', () => {
-      const level = ConfigPointService.addConfig(CONFIG_NAME, BASE_CONFIG);
+      const level = ConfigPoint.addConfig(CONFIG_NAME, BASE_CONFIG);
       level.extendConfig(MODIFY_CONFIG);
       expect(level).toMatchObject(MODIFY_MATCH);
     });
@@ -104,7 +104,7 @@ describe('ConfigPointService.js', () => {
 
   describe('register()', () => {
     it('creates a base configuration', () => {
-      const { testConfigPoint } = ConfigPointService.register([{
+      const { testConfigPoint } = ConfigPoint.register([{
         configName: CONFIG_NAME,
         configBase: BASE_CONFIG,
       }]);
@@ -112,7 +112,7 @@ describe('ConfigPointService.js', () => {
     });
 
     it('creates and updates', () => {
-      const { testConfigPoint } = ConfigPointService.register([{
+      const { testConfigPoint } = ConfigPoint.register([{
         configName: CONFIG_NAME,
         configBase: BASE_CONFIG,
         extension: MODIFY_CONFIG,
@@ -121,17 +121,17 @@ describe('ConfigPointService.js', () => {
     });
 
     it('references context value', () => {
-      const multiply = (a, b) => a * b;
-      const registered = ConfigPointService.register([{
+      const _multiply = (a, b) => a * b;
+      const registered = ConfigPoint.register([{
         configName: CONFIG_NAME,
         configBase: {
-          context: { multiply },
-          multiply: { _reference: 'multiply' },
+          _multiply,
+          multiply: { _reference: '_multiply' },
         },
         extension: MODIFY_CONFIG,
       }]);
       const { testConfigPoint } = registered;
-      expect(testConfigPoint.multiply).toBe(multiply);
+      expect(testConfigPoint.multiply).toBe(_multiply);
     });
 
   });
