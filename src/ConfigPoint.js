@@ -8,7 +8,7 @@ export const SOURCE_TYPE = 'source';
 export const USER_SETTING_TYPE = 'userSetting';
 
 // TODO - change to _configOperation 
-const extendOp = (op,) => ({ _extendOp: op });
+const extendOp = (op) => ({ _extendOp: op });
 export const ConfigPointOp = {
   insertAt: (position, value) => ({ ...INSERT, position, value }),
 };
@@ -20,8 +20,6 @@ const performInsert = (sVal, base, bKey, context) => {
   return base;
 };
 
-const REPLACE = extendOp("replace");
-const REMOVE = extendOp('remove');
 const INSERT = extendOp('insert');
 
 function isPrimitive(val) {
@@ -55,7 +53,7 @@ export function mergeArray(dest, src, context) {
   return mergeObject(dest, src, context);
 }
 
-function mergeKey(base, key, context) {
+function mergeKey(base, key) {
   return key;
 }
 
@@ -176,7 +174,7 @@ const BaseImplementation = {
   register(config) {
     let ret = {};
     for (const configItem of config) {
-      const { configName, configBase, extension, basedOn } = configItem;
+      const { configName, configBase, extension } = configItem;
       if (configBase) {
         ret[configName] = this.addConfig(configName, configBase);
       }

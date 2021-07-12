@@ -1,4 +1,4 @@
-import { ConfigPoint, mergeAssign, mergeCreate, mergeObject, ConfigPointOp } from './ConfigPoint.js';
+import { ConfigPoint, mergeCreate, mergeObject, ConfigPointOp } from './ConfigPoint.js';
 
 describe('ConfigPoint.js', () => {
   const CONFIG_NAME = 'testConfigPoint';
