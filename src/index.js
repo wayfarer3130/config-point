@@ -1,4 +1,4 @@
-import ConfigPoint from './ConfigPoint';
+import {ConfigPoint, ConfigPointOp} from './ConfigPoint';
 
 export default ConfigPoint;
-export { ConfigPoint };
+export { ConfigPoint, ConfigPointOp };
