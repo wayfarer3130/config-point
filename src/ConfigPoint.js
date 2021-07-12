@@ -6,6 +6,8 @@ let _configPoints = {};
 /** Source types are the original/base type, and are unique by level/name */
 export const SOURCE_TYPE = 'source';
 export const USER_SETTING_TYPE = 'userSetting';
+
+// TODO - change to _configOperation 
 const extendOp = (op,) => ({ _extendOp: op });
 export const ConfigPointOp = {
   insertAt: (position, value) => ({ ...INSERT, position, value }),
@@ -39,11 +41,11 @@ export const mergeCreate = function (src, context) {
     return src;
   }
   const tof = typeof (src);
-  if (tof == 'function') {
+  if (tof === 'function') {
     // TODO - decide between returning raw original and copied/updated value
     return src;
   }
-  if (tof == 'object') {
+  if (tof === 'object') {
     return mergeObject(isArray(src) ? [] : {}, src, context);
   }
   throw `The value ${src} of type ${tof} isn't a known type for merging.`;
@@ -121,7 +123,7 @@ const ConfigPointFunctionality = {
       if (allowUpdate) {
         this._extensions._order = this._extensions._order.filter(item => item !== toRemove);
       } else {
-        throw `Level already has extension ${name}`;
+        throw new Error(`Level already has extension ${name}`);
       }
     }
     this._extensions[name] = data;
@@ -168,8 +170,7 @@ const BaseImplementation = {
    * The format of config is an array of extension items.
    * Each item has a configName for the top level config to change,
    * and then has configBase to set the base configuration.
-   * The base
-   * extension, with an extension item or
+   * The base extension, with an extension item or
    * basedOn, to base the extension on another existing configuration.
    */
   register(config) {
