@@ -1,38 +1,81 @@
 /**
  * Contains the model data for the extensibility level points.
+ * This is implicitly updated by the add/update configuration values.
  */
 let _configPoints = {};
 
-/** Source types are the original/base type, and are unique by level/name */
-export const SOURCE_TYPE = 'source';
-export const USER_SETTING_TYPE = 'userSetting';
+const configOperation = (configOperation, props) => ({ 
+  configOperation,
+  isOperation(src) { return (src && src.configOperation==this.configOperation) },
+  create(props) { return {...props, configOperation:this.configOperation}; },
+  at(position,value,props) { return this.create({...props,position,value})},
+  ...props,
+ });
 
-// TODO - change to _configOperation 
-const extendOp = (op) => ({ _extendOp: op });
-export const ConfigPointOp = {
-  insertAt: (position, value) => ({ ...INSERT, position, value }),
-};
+// Indicates that this is the default configuration operation
+export const InsertOp = configOperation('insert', {
+  perform({sVal, base, context}) {
+    if (sVal.position != null) {
+      base.splice(sVal.position, 0, mergeCreate(sVal.value, context));
+    }
+    return base;
+  },
+});
 
-const performInsert = (sVal, base, bKey, context) => {
-  if (sVal.position != null) {
-    base.splice(sVal.position, 0, mergeCreate(sVal.value, context));
-  }
-  return base;
-};
+// Indicates that this is a delete or remove operation
+export const DeleteOp = configOperation('delete',{
+  perform({base, bKey, sVal}) {
+    if( isArray(base) ) {
+      base.splice(sVal.position,1);
+    } else {
+      delete base[bKey];
+    }
+    return base;
+  },
+}); 
 
-const INSERT = extendOp('insert');
+/**
+  * Reference to other values operation.
+  * createCurrent creates an object the references the current ConfigPoint value, with the form:
+  * { configOperation: 'reference', reference: 'nameOfReference' }
+  */
+export const ReferenceOp = configOperation('reference',{
+  createCurrent(reference) { return {reference, configOperation: this.configOperation }; },
+  perform({sVal, context}) {
+    return context && context[sVal.reference];
+  },
+}); 
 
+/**
+  * Indicates that this is a reference operation.
+  */
+ export const ReplaceOp = configOperation('reference',{
+  perform({sVal, context,base,bKey}) {
+    return base[bKey] = mergeCreate(sVal, context);
+  },
+}); 
+
+/**
+ * Indicates if any is a primitive value, eg not an object or function.
+ * 
+ * @param {any} val 
+ * @returns true if val is primitive
+ */
 function isPrimitive(val) {
   const tof = typeof (val);
   return val === null || val === undefined || tof == 'number' || tof == 'boolean' || tof == 'string' || tof == 'bigint';
 }
 
-/** Creates an object of the same type as src, as a child of parent */
+/** Creates an object of the same type as src, but as a new copy so that it can be 
+ * modified later on.
+ * For reference instances, creates a copy of the referenced object.
+ * For primitives, returns the primitive.
+ * Arrays and objects creates a copy
+ * Functions, returns the original function (TBD on how to copy those)
+ */
 export const mergeCreate = function (src, context) {
-  const reference = src && src._reference;
-  if (reference) {
-    const refValue = context && context[reference];
-    return refValue;
+  if (ReferenceOp.isOperation(src)) {
+    return ReferenceOp.perform({sVal: src,context});
   }
 
   if (isPrimitive(src)) {
@@ -46,66 +89,66 @@ export const mergeCreate = function (src, context) {
   if (tof === 'object') {
     return mergeObject(isArray(src) ? [] : {}, src, context);
   }
-  throw `The value ${src} of type ${tof} isn't a known type for merging.`;
+  throw new Error(`The value ${src} of type ${tof} isn't a known type for merging.`);
 }
 
-export function mergeArray(dest, src, context) {
-  return mergeObject(dest, src, context);
-}
-
+// Returns the relevant key to use, current, just returns key itself.
 function mergeKey(base, key) {
   return key;
 }
 
-function isRemove(src) {
-  return src && src._extendOp == "remove";
-}
-
-function isReplace(src) {
-  return src && src._extendOp == "replace";
-}
-
-function isInsert(src) {
-  return src && src._extendOp == "insert";
-}
-
+/** Indiciates of the object is an array. */
 function isArray(src) {
   return typeof (src) == 'object' && typeof (src.length) == 'number';
 }
 
+/**
+ * Merges into base[key] the value from src[key], if any.  This can end up remove
+ * base[key], merging into it, replacing it or modifying the value.
+ * @param {*} base 
+ * @param {*} src 
+ * @param {*} key 
+ * @param {*} context 
+ * @returns 
+ */
 export function mergeAssign(base, src, key, context) {
   const bKey = mergeKey(base, key, context);
   const bVal = base[bKey];
   let sVal = src[key];
-  if (isArray(bVal)) {
-    if (sVal == null) return;
-    if (isRemove(sVal)) {
-      base.splice(key, 1);
-      return base;
-    }
-  } else {
-    if (isRemove(sVal)) {
-      delete base[bKey];
-      return;
-    }
+  if ( DeleteOp.isOperation(sVal) ) {
+    return DeleteOp.perform({sVal,base,bKey, key});
   }
 
-  if (isInsert(sVal)) {
-    return performInsert(sVal, base, bKey, context);
-  }
+  if (isArray(bVal) && sVal==null ) return base;
 
+  if (InsertOp.isOperation(sVal)) {
+    return InsertOp.perform({sVal, base, context});
+  }
 
   if (isPrimitive(bVal)) {
     return base[bKey] = mergeCreate(sVal, context);
   }
 
-  if (isReplace(sVal)) {
-    return base[bKey] = mergeCreate(sVal, context);
+  if (ReplaceOp.isOperation(sVal)) {
+    return ReplaceOp.perform({base,bKey,sVal,context});
   }
 
   return mergeObject(bVal, sVal, context);
 }
 
+/**
+ * mergeObject is a deep Object.assign replacement with enhanced merge/update functionality.
+ * If the base value (being assigned to) has a property P, and the src value also has P, then
+ * base.P isn't replaced with src.P, but is instead merged.
+ * As well, if src.P is one of the operations defined above (ReplaceOp, DeleteOp etc), then instead of
+ * base.P being assigned from src.P, the src.P operation method "perform" is run instead, which can
+ * delete base.P, replace  base.P, insert into a list or remove from a list.
+ * TODO - add the SortedListOp to create sorted lists.
+ * @param {object|function} base 
+ * @param {*} src 
+ * @param {*} context 
+ * @returns 
+ */
 export function mergeObject(base, src, context) {
   for (const key in src) {
     mergeAssign(base, src, key, context);
@@ -114,15 +157,17 @@ export function mergeObject(base, src, context) {
 }
 
 const ConfigPointFunctionality = {
-  extendConfig(data, allowUpdate) {
-    const name = data.name && ("_order" + this._extensions._order.length);
+  /**
+   * Extends the configuration on this config point instance with the data in data by adding data to the lsit
+   * of config point extensions, and then applying all the existing extensions to generate the config point.
+   * @param {*} data 
+   * @returns this object.
+   */
+  extendConfig(data) {
+    const name = data.name || ("_order" + this._extensions._order.length);
     const toRemove = this._extensions[name];
     if (toRemove) {
-      if (allowUpdate) {
-        this._extensions._order = this._extensions._order.filter(item => item !== toRemove);
-      } else {
-        throw new Error(`Level already has extension ${name}`);
-      }
+      throw new Error(`Level already has extension ${name}`);
     }
     this._extensions[name] = data;
     this._extensions._order.push(data);
@@ -130,6 +175,11 @@ const ConfigPointFunctionality = {
     return this;
   },
 
+  /**
+   * Applies all the extensions onto this config point, by starting with merging the configuration base, then
+   * for each item in the extension, merging it into the resulting object.
+   * Directly modifies this.
+   */
   applyExtensions() {
     mergeObject(this, this._configBase, this._configBase);
     for (const item of this._extensions._order) {
@@ -146,7 +196,7 @@ const BaseImplementation = {
    */
   addConfig(configName, configBase) {
     if (typeof (configBase) === 'string') {
-      if (configBase === configName) throw `The configuration point ${configName} uses itself as a base`;
+      if (configBase === configName) throw new Error(`The configuration point ${configName} uses itself as a base`);
       configBase = this.addConfig(configBase);
     }
     let config = _configPoints[configName];
@@ -155,7 +205,6 @@ const BaseImplementation = {
       config._configBase = configBase;
       config._extensions = { _order: [] };
     } else if (configBase) {
-      Object.assign(config, configBase);
       config._configBase = configBase;
     }
     if (configBase) {
@@ -170,10 +219,15 @@ const BaseImplementation = {
    * and then has configBase to set the base configuration.
    * The base extension, with an extension item or
    * basedOn, to base the extension on another existing configuration.
+   * @param {Array|ConfigItem}} config elements to add to the ConfigPoint values.
    */
-  register(config) {
+  register(...config) {
     let ret = {};
-    for (const configItem of config) {
+    config.forEach( (configItem) => {
+      if( isArray(configItem) ) {
+        ret = {...ret, ...this.register(...configItem)};
+        return;
+      }
       const { configName, configBase, extension } = configItem;
       if (configBase) {
         ret[configName] = this.addConfig(configName, configBase);
@@ -181,26 +235,23 @@ const BaseImplementation = {
       if (extension) {
         ret[configName] = this.addConfig(configName).extendConfig(extension);
       }
-    }
+    });
     return ret;
   },
 
+  // Indicate of the given configuration item exists.
   hasConfig(configName) {
     return _configPoints[configName] != undefined;
   },
 
+  // Clear all configuration items, mostly used for test purposes.
   clear() {
     _configPoints = {};
   }
 };
 
-const ConfigPoint = Object.assign(
-  { name: 'ConfigPoint', create: () => ConfigPoint, },
-  BaseImplementation,
-);
+export const ConfigPoint = { name: 'ConfigPoint', ...BaseImplementation};
 
-
-export { ConfigPoint };
 export default ConfigPoint;
 
 // TODO - find a way to allow loading a safe list of configuration elements

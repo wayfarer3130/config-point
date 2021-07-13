@@ -1,4 +1,5 @@
-import { ConfigPoint, mergeCreate, mergeObject, ConfigPointOp } from './ConfigPoint.js';
+import { ConfigPoint, InsertOp } from './index.js';
+import { DeleteOp, mergeCreate, mergeObject, ReferenceOp } from './ConfigPoint.js';
 
 describe('ConfigPoint.js', () => {
   const CONFIG_NAME = 'testConfigPoint';
@@ -79,7 +80,7 @@ describe('ConfigPoint.js', () => {
     it('inserts elements', () => {
       const arr = [1, 2, 3];
       const base = { arr };
-      const inserts = { arr: [ConfigPointOp.insertAt(1, 1.5)] };
+      const inserts = { arr: [InsertOp.at(1, 1.5)] };
       let created = mergeCreate(base);
       mergeObject(created, inserts);
       expect(created.arr).toEqual([1, 1.5, 2, 3]);
@@ -102,21 +103,30 @@ describe('ConfigPoint.js', () => {
     });
   });
 
-  describe('register()', () => {
-    it('creates a base configuration', () => {
-      const { testConfigPoint } = ConfigPoint.register([{
+  describe('hasConfig()', () => {
+    ConfigPoint.register({
         configName: CONFIG_NAME,
         configBase: BASE_CONFIG,
-      }]);
+    });
+    expect(ConfigPoint.hasConfig(CONFIG_NAME)).toBe(true);
+    expect(ConfigPoint.hasConfig('notFound')).toBe(false);    
+  });
+  
+  describe('register()', () => {
+    it('creates a base configuration', () => {
+      const { testConfigPoint } = ConfigPoint.register({
+        configName: CONFIG_NAME,
+        configBase: BASE_CONFIG,
+      });
       expect(testConfigPoint).toMatchObject(BASE_CONFIG);
     });
 
     it('creates and updates', () => {
-      const { testConfigPoint } = ConfigPoint.register([{
+      const { testConfigPoint } = ConfigPoint.register({
         configName: CONFIG_NAME,
         configBase: BASE_CONFIG,
         extension: MODIFY_CONFIG,
-      }]);
+      });
       expect(testConfigPoint).toMatchObject(MODIFY_MATCH);
     });
 
@@ -126,7 +136,7 @@ describe('ConfigPoint.js', () => {
         configName: CONFIG_NAME,
         configBase: {
           _multiply,
-          multiply: { _reference: '_multiply' },
+          multiply: { configOperation: 'reference', reference: '_multiply' },
         },
         extension: MODIFY_CONFIG,
       }]);
@@ -134,6 +144,88 @@ describe('ConfigPoint.js', () => {
       expect(testConfigPoint.multiply).toBe(_multiply);
     });
 
+    it('extends first, then creates base', () => {
+      const { testConfigPoint } = ConfigPoint.register({
+        configName: CONFIG_NAME,
+        extension: MODIFY_CONFIG,
+      }, 
+      {
+        configName: CONFIG_NAME,
+        configBase: BASE_CONFIG,
+      });
+      expect(testConfigPoint).toMatchObject(MODIFY_MATCH);
+
+    });
+
+    it('extends named base', () => {
+      const { testConfigPoint2 } = ConfigPoint.register({
+        configName: CONFIG_NAME,
+        configBase: BASE_CONFIG,
+        extension: MODIFY_CONFIG,
+      }, 
+      {
+        configName: CONFIG_NAME+'2',
+        configBase: CONFIG_NAME,
+      });
+      expect(testConfigPoint2).toMatchObject(MODIFY_MATCH);
+
+    });
+
+    it('Throws on extend of same instance', () => {
+      expect( () => {
+        ConfigPoint.register({
+          configName: CONFIG_NAME,
+          configBase: CONFIG_NAME,
+        });
+      }).toThrow();
+    });
+
+    it('Throws on extend twice', () => {
+      expect( () => ConfigPoint.register({
+          configName: CONFIG_NAME,
+          extension: {name:'name',},
+        },
+        {
+          configName: CONFIG_NAME,
+          extension: {name:'name',},
+        })).toThrow();
+    });
+
+
+    it('DeleteOp', () => {
+      const { testConfigPoint } = ConfigPoint.register({
+        configName: CONFIG_NAME,
+        configBase: {
+          toBeDeleted: true,
+          list: [0,1,2,3],
+        },
+        extension: {
+          toBeDeleted: DeleteOp.create(1),
+          list: [DeleteOp.at(1)],
+        },
+      });
+      expect(testConfigPoint.toBeDeleted).toBe(undefined);
+      expect(testConfigPoint.list).toMatchObject([0,2,3]);
+    });
+
+    it('ReferenceOp', () => {
+      const nonReference = {reference:'preExistingItem', };
+      const { testConfigPoint } = ConfigPoint.register({
+        configName: CONFIG_NAME,
+        configBase: {
+          preExistingItem: 'item',
+          reference: ReferenceOp.createCurrent('preExistingItem'),
+        },
+        extension: {
+          reference2: {configOperation: 'reference', reference: 'reference'},
+          nonReference,
+        },
+      });
+      expect(testConfigPoint.reference).toBe('item');
+      expect(testConfigPoint.reference2).toBe('item');
+      expect(testConfigPoint.nonReference).toMatchObject(nonReference);
+    });
   });
+
 
 });

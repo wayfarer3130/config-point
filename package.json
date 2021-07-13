@@ -1,6 +1,6 @@
 {
   "name": "config-point",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "A JS library to provide configuration points allowing declarative configuration for programs.",
   "main": "dist/index_bundle.js",
   "repository": "https://github.com/wayfarer3130/config-point",
