@@ -85,6 +85,9 @@ export const SortOp = configOperation('sort',{
     };
     if( !referenceValue ) return original;
     let result = Object.values(referenceValue).filter( value => (value!=null && (!valueReference || value[valueReference])));
+    if( sortKey ) {
+      result = result.filter(value => value[sortKey]!==null );
+    }
     result.sort( compare );
     result = result.map( item => (valueReference ? item[valueReference] : item));
     original.splice(0,original.length, ...result);
@@ -230,13 +233,36 @@ const ConfigPointFunctionality = {
    * Directly modifies this.
    */
   applyExtensions() {
-    this.postOperation = undefined;
-    mergeObject(this, this._configBase, this);
-    for (const item of this._extensions._order) {
-      mergeObject(this, item, this);
+    if( this._preExistingKeys ) {
+      for(const key of Object.keys(this)) {
+        if( !this._preExistingKeys[key] ) delete this[key]; 
+      }
+    } else {
+      this._preExistingKeys = {};
+      this._preExistingKeys = Object.keys(this).reduce((keyset,key) => {
+        keyset[key] = true;
+        return keyset;
+      }, this._preExistingKeys);
     }
+    this._applyExtensionsTo(this);
+
     if( this.postOperation ) {
       Object.values(this.postOperation).forEach( postOp => postOp() );
+    }
+  },
+
+  /** Applies the extensions from this object to the given result.  Allows for applying nested parent extensions,
+   * and includes all the parent configuration before apply this set of extensions.
+   */
+  _applyExtensionsTo(dest) {
+    const configBase = this._configBase;
+    if( configBase && configBase._applyExtensionsTo ) {
+      configBase._applyExtensionsTo(dest);
+    } else {
+      mergeObject(dest, configBase, dest);
+    }
+    for (const item of this._extensions._order) {
+      mergeObject(dest, item, dest);
     }
   },
 };

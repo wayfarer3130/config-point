@@ -234,6 +234,7 @@ describe('ConfigPoint.js', () => {
       const srcPrimitive = [3, 1, 2];
       const srcArray = [{value: 3, priority: 1}, {value:2, priority: 2}, {value:1, priority:3}];
       const srcObject = {three:{value: 3, priority: 1}, two:{value:2, priority: 2}, one:{value:1, priority:3}};
+      const srcFour = {value: 4, priority: 0};
       const configBase = { 
         srcPrimitive, srcArray, srcObject,
         sortPrimitive: SortOp.createSort('srcPrimitive'),
@@ -241,14 +242,26 @@ describe('ConfigPoint.js', () => {
         sortObject: SortOp.createSort('srcObject', 'priority'),
         sortMissing: SortOp.createSort('srcMissing', 'priority'),
       };
-      const { testConfigPoint } = ConfigPoint.register({
-        configName: CONFIG_NAME,
-        configBase,
-      });
+      const { testConfigPoint, testConfigPoint2 } = ConfigPoint.register(
+        {
+          configName: CONFIG_NAME,
+          configBase,
+        },
+        {
+          configName: 'testConfigPoint2',
+          configBase: CONFIG_NAME,
+          extension: {
+            srcPrimitive: [InsertOp.at(0,4)],
+            srcObject: {srcFour, three: {priority: 4}, two: {priority: null}}
+          },
+        },
+      );
       expect(testConfigPoint.sortPrimitive).toMatchObject([1,2,3]);
       expect(testConfigPoint.sortArray).toMatchObject([3,2,1]);
       expect(testConfigPoint.sortObject).toMatchObject([srcObject.three, srcObject.two, srcObject.one]);
       expect(testConfigPoint.sortMissing).toMatchObject([]);
+      expect(testConfigPoint2.sortPrimitive).toMatchObject([1,2,3,4]);
+      expect(testConfigPoint2.sortObject).toMatchObject([srcFour, srcObject.one, {...srcObject.three, priority: 4}]);
     });
 
   });
