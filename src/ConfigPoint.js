@@ -38,20 +38,66 @@ export const DeleteOp = configOperation('delete',{
   * Reference to other values operation.
   * createCurrent creates an object the references the current ConfigPoint value, with the form:
   * { configOperation: 'reference', reference: 'nameOfReference' }
+  * Warning: There is no ordering to the reference within a given set of object creates.  That means you cannot
+  * necessarily reference something created in the configuration object, only pre-existing objects should be
+  * referenced.
   */
 export const ReferenceOp = configOperation('reference',{
   createCurrent(reference) { return {reference, configOperation: this.configOperation }; },
   perform({sVal, context}) {
-    return context && context[sVal.reference];
+    return mergeCreate(context && context[sVal.reference], context);
   },
 }); 
 
 /**
   * Indicates that this is a reference operation.
   */
- export const ReplaceOp = configOperation('reference',{
+export const ReplaceOp = configOperation('replace',{
   perform({sVal, context,base,bKey}) {
     return base[bKey] = mergeCreate(sVal, context);
+  },
+}); 
+
+/**
+ * Indicates that this is a sort operation operation.
+ * A sort operation takes the parameters:
+ *    valueReference - the attribute name to extract as the value, if not provided, defaults to the entire object
+ *    sortKey - the attribute name to sort on.  If not provided, defaults to the value object
+ *    reference - the attribute that this instance copies for the source material
+ * The sorting is performed on the referenced value, which can be a list or an object.  If an object, then all values
+ * from the object are considered to be part of the initial sort order.
+*/
+export const SortOp = configOperation('sort',{
+  createSort(reference,sortKey, valueReference, props) {
+     return this.create({...props, reference,sortKey,valueReference});
+  },
+  performSort(original,sVal,context) {
+    const {valueReference, sortKey, reference} = sVal;
+    if( reference==undefined ) throw Error('reference isnt defined');
+    const referenceValue = context[reference];
+    const compare = (a,b) => {
+      const valueA = valueReference ? a[valueReference] : a;
+      const valueB = valueReference ? b[valueReference] : b;
+      const sortA = sortKey ? a[sortKey] : valueA;
+      const sortB= sortKey ? b[sortKey] : valueB;
+      if( sortA === sortB ) return 0;
+      return sortA < sortB ? -1 : 1;
+    };
+    if( !referenceValue ) return original;
+    let result = Object.values(referenceValue).filter( value => (value!=null && (!valueReference || value[valueReference])));
+    result.sort( compare );
+    result = result.map( item => (valueReference ? item[valueReference] : item));
+    original.splice(0,original.length, ...result);
+    return original;
+ },
+ perform({sVal, context}) {
+   if( context ) {
+     if( !context.postOperation ) context.postOperation = [];
+     let original = [];
+     context.postOperation.push(this.performSort.bind(context,original,sVal, context));
+     return original;
+   }
+   return [];
   },
 }); 
 
@@ -73,23 +119,26 @@ function isPrimitive(val) {
  * Arrays and objects creates a copy
  * Functions, returns the original function (TBD on how to copy those)
  */
-export const mergeCreate = function (src, context) {
-  if (ReferenceOp.isOperation(src)) {
-    return ReferenceOp.perform({sVal: src,context});
+export const mergeCreate = function (sVal, context) {
+  if (ReferenceOp.isOperation(sVal)) {
+    return ReferenceOp.perform({sVal,context});
+  }
+  if( SortOp.isOperation(sVal) ) {
+    return SortOp.perform({sVal,context});
   }
 
-  if (isPrimitive(src)) {
-    return src;
+  if (isPrimitive(sVal)) {
+    return sVal;
   }
-  const tof = typeof (src);
+  const tof = typeof (sVal);
   if (tof === 'function') {
     // TODO - decide between returning raw original and copied/updated value
-    return src;
+    return sVal;
   }
   if (tof === 'object') {
-    return mergeObject(isArray(src) ? [] : {}, src, context);
+    return mergeObject(isArray(sVal) ? [] : {}, sVal, context);
   }
-  throw new Error(`The value ${src} of type ${tof} isn't a known type for merging.`);
+  throw new Error(`The value ${sVal} of type ${tof} isn't a known type for merging.`);
 }
 
 // Returns the relevant key to use, current, just returns key itself.
@@ -181,9 +230,13 @@ const ConfigPointFunctionality = {
    * Directly modifies this.
    */
   applyExtensions() {
-    mergeObject(this, this._configBase, this._configBase);
+    this.postOperation = undefined;
+    mergeObject(this, this._configBase, this);
     for (const item of this._extensions._order) {
       mergeObject(this, item, this);
+    }
+    if( this.postOperation ) {
+      Object.values(this.postOperation).forEach( postOp => postOp() );
     }
   },
 };

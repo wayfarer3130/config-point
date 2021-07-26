@@ -1,5 +1,6 @@
-import { ConfigPoint, InsertOp } from './index.js';
-import { DeleteOp, mergeCreate, mergeObject, ReferenceOp } from './ConfigPoint.js';
+import { ConfigPoint, InsertOp, DeleteOp, ReferenceOp, SortOp } from './index.js';
+// Import for testing internals
+import { mergeCreate, mergeObject } from './ConfigPoint.js';
 
 describe('ConfigPoint.js', () => {
   const CONFIG_NAME = 'testConfigPoint';
@@ -77,14 +78,6 @@ describe('ConfigPoint.js', () => {
       expect(aCopy.sumFunc(5, 6)).toBe(11);
     });
 
-    it('inserts elements', () => {
-      const arr = [1, 2, 3];
-      const base = { arr };
-      const inserts = { arr: [InsertOp.at(1, 1.5)] };
-      let created = mergeCreate(base);
-      mergeObject(created, inserts);
-      expect(created.arr).toEqual([1, 1.5, 2, 3]);
-    });
 
   });
 
@@ -191,7 +184,9 @@ describe('ConfigPoint.js', () => {
         })).toThrow();
     });
 
-
+  });
+  
+  describe('configOperation()', () => {
     it('DeleteOp', () => {
       const { testConfigPoint } = ConfigPoint.register({
         configName: CONFIG_NAME,
@@ -225,6 +220,37 @@ describe('ConfigPoint.js', () => {
       expect(testConfigPoint.reference2).toBe('item');
       expect(testConfigPoint.nonReference).toMatchObject(nonReference);
     });
+
+    it('InsertOp', () => {
+      const arr = [1, 2, 3];
+      const base = { arr };
+      const inserts = { arr: [InsertOp.at(1, 1.5)] };
+      let created = mergeCreate(base);
+      mergeObject(created, inserts);
+      expect(created.arr).toEqual([1, 1.5, 2, 3]);
+    });
+
+    it('SortOp', () => {
+      const srcPrimitive = [3, 1, 2];
+      const srcArray = [{value: 3, priority: 1}, {value:2, priority: 2}, {value:1, priority:3}];
+      const srcObject = {three:{value: 3, priority: 1}, two:{value:2, priority: 2}, one:{value:1, priority:3}};
+      const configBase = { 
+        srcPrimitive, srcArray, srcObject,
+        sortPrimitive: SortOp.createSort('srcPrimitive'),
+        sortArray: SortOp.createSort('srcArray', 'priority', 'value'),
+        sortObject: SortOp.createSort('srcObject', 'priority'),
+        sortMissing: SortOp.createSort('srcMissing', 'priority'),
+      };
+      const { testConfigPoint } = ConfigPoint.register({
+        configName: CONFIG_NAME,
+        configBase,
+      });
+      expect(testConfigPoint.sortPrimitive).toMatchObject([1,2,3]);
+      expect(testConfigPoint.sortArray).toMatchObject([3,2,1]);
+      expect(testConfigPoint.sortObject).toMatchObject([srcObject.three, srcObject.two, srcObject.one]);
+      expect(testConfigPoint.sortMissing).toMatchObject([]);
+    });
+
   });
 
 
