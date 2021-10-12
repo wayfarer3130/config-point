@@ -1,20 +1,22 @@
+import JSON5 from 'json5';
+
 /**
  * Contains the model data for the extensibility level points.
  * This is implicitly updated by the add/update configuration values.
  */
 let _configPoints = {};
 
-const configOperation = (configOperation, props) => ({ 
+const configOperation = (configOperation, props) => ({
   configOperation,
-  isOperation(src) { return (src && src.configOperation==this.configOperation) },
-  create(props) { return {...props, configOperation:this.configOperation}; },
-  at(position,value,props) { return this.create({...props,position,value})},
+  isOperation(src) { return (src && src.configOperation == this.configOperation) },
+  create(props) { return { ...props, configOperation: this.configOperation }; },
+  at(position, value, props) { return this.create({ ...props, position, value }) },
   ...props,
- });
+});
 
 // Indicates that this is the default configuration operation
 export const InsertOp = configOperation('insert', {
-  perform({sVal, base, context}) {
+  perform({ sVal, base, context }) {
     if (sVal.position != null) {
       base.splice(sVal.position, 0, mergeCreate(sVal.value, context));
     }
@@ -23,40 +25,47 @@ export const InsertOp = configOperation('insert', {
 });
 
 // Indicates that this is a delete or remove operation
-export const DeleteOp = configOperation('delete',{
-  perform({base, bKey, sVal}) {
-    if( isArray(base) ) {
-      base.splice(sVal.position,1);
+export const DeleteOp = configOperation('delete', {
+  perform({ base, bKey, sVal }) {
+    if (isArray(base)) {
+      base.splice(sVal.position, 1);
     } else {
       delete base[bKey];
     }
     return base;
   },
-}); 
+});
 
 /**
   * Reference to other values operation.
   * createCurrent creates an object the references the current ConfigPoint value, with the form:
-  * { configOperation: 'reference', reference: 'nameOfReference' }
+  *    configOperation: 'reference',
+  *    reference: 'nameOfReference'
+  *    source?: where the object is coming from, 'ConfigPoint' means it is an external config point object
+  * By default the reference value refers to an item in the current "context", which is usually a base value of the current
+  * configuration item being created.  It is 
   * Warning: There is no ordering to the reference within a given set of object creates.  That means you cannot
   * necessarily reference something created in the configuration object, only pre-existing objects should be
   * referenced.
+  * For ConfigPoint references, a value will be created if one does not exist.
   */
-export const ReferenceOp = configOperation('reference',{
-  createCurrent(reference) { return {reference, configOperation: this.configOperation }; },
-  perform({sVal, context}) {
-    return mergeCreate(context && context[sVal.reference], context);
+export const ReferenceOp = configOperation('reference', {
+  createCurrent(reference) { return { reference, configOperation: this.configOperation }; },
+  perform({ sVal, context }) {
+    const useContext = sVal.source ? ConfigPoint.addConfig(sVal.source) : context;
+    if( sVal.source && !sVal.reference ) return useContext;
+    return mergeCreate(useContext && useContext[sVal.reference], context);
   },
-}); 
+});
 
 /**
   * Indicates that this is a reference operation.
   */
-export const ReplaceOp = configOperation('replace',{
-  perform({sVal, context,base,bKey}) {
+export const ReplaceOp = configOperation('replace', {
+  perform({ sVal, context, base, bKey }) {
     return base[bKey] = mergeCreate(sVal, context);
   },
-}); 
+});
 
 /**
  * Indicates that this is a sort operation operation.
@@ -67,42 +76,42 @@ export const ReplaceOp = configOperation('replace',{
  * The sorting is performed on the referenced value, which can be a list or an object.  If an object, then all values
  * from the object are considered to be part of the initial sort order.
 */
-export const SortOp = configOperation('sort',{
-  createSort(reference,sortKey, valueReference, props) {
-     return this.create({...props, reference,sortKey,valueReference});
+export const SortOp = configOperation('sort', {
+  createSort(reference, sortKey, valueReference, props) {
+    return this.create({ ...props, reference, sortKey, valueReference });
   },
-  performSort(original,sVal,context) {
-    const {valueReference, sortKey, reference} = sVal;
-    if( reference==undefined ) throw Error('reference isnt defined');
+  performSort(original, sVal, context) {
+    const { valueReference, sortKey, reference } = sVal;
+    if (reference == undefined) throw Error('reference isnt defined');
     const referenceValue = context[reference];
-    const compare = (a,b) => {
+    const compare = (a, b) => {
       const valueA = valueReference ? a[valueReference] : a;
       const valueB = valueReference ? b[valueReference] : b;
       const sortA = sortKey ? a[sortKey] : valueA;
-      const sortB= sortKey ? b[sortKey] : valueB;
-      if( sortA === sortB ) return 0;
+      const sortB = sortKey ? b[sortKey] : valueB;
+      if (sortA === sortB) return 0;
       return sortA < sortB ? -1 : 1;
     };
-    if( !referenceValue ) return original;
-    let result = Object.values(referenceValue).filter( value => (value!=null && (!valueReference || value[valueReference])));
-    if( sortKey ) {
-      result = result.filter(value => value[sortKey]!==null );
+    if (!referenceValue) return original;
+    let result = Object.values(referenceValue).filter(value => (value != null && (!valueReference || value[valueReference])));
+    if (sortKey) {
+      result = result.filter(value => value[sortKey] !== null);
     }
-    result.sort( compare );
-    result = result.map( item => (valueReference ? item[valueReference] : item));
-    original.splice(0,original.length, ...result);
+    result.sort(compare);
+    result = result.map(item => (valueReference ? item[valueReference] : item));
+    original.splice(0, original.length, ...result);
     return original;
- },
- perform({sVal, context}) {
-   if( context ) {
-     if( !context.postOperation ) context.postOperation = [];
-     let original = [];
-     context.postOperation.push(this.performSort.bind(context,original,sVal, context));
-     return original;
-   }
-   return [];
   },
-}); 
+  perform({ sVal, context }) {
+    if (context) {
+      if (!context.postOperation) context.postOperation = [];
+      let original = [];
+      context.postOperation.push(this.performSort.bind(context, original, sVal, context));
+      return original;
+    }
+    return [];
+  },
+});
 
 /**
  * Indicates if any is a primitive value, eg not an object or function.
@@ -124,10 +133,10 @@ function isPrimitive(val) {
  */
 export const mergeCreate = function (sVal, context) {
   if (ReferenceOp.isOperation(sVal)) {
-    return ReferenceOp.perform({sVal,context});
+    return ReferenceOp.perform({ sVal, context });
   }
-  if( SortOp.isOperation(sVal) ) {
-    return SortOp.perform({sVal,context});
+  if (SortOp.isOperation(sVal)) {
+    return SortOp.perform({ sVal, context });
   }
 
   if (isPrimitive(sVal)) {
@@ -167,14 +176,14 @@ export function mergeAssign(base, src, key, context) {
   const bKey = mergeKey(base, key, context);
   const bVal = base[bKey];
   let sVal = src[key];
-  if ( DeleteOp.isOperation(sVal) ) {
-    return DeleteOp.perform({sVal,base,bKey, key});
+  if (DeleteOp.isOperation(sVal)) {
+    return DeleteOp.perform({ sVal, base, bKey, key });
   }
 
-  if (isArray(bVal) && sVal==null ) return base;
+  if (isArray(bVal) && sVal == null) return base;
 
   if (InsertOp.isOperation(sVal)) {
-    return InsertOp.perform({sVal, base, context});
+    return InsertOp.perform({ sVal, base, context });
   }
 
   if (isPrimitive(bVal)) {
@@ -182,7 +191,7 @@ export function mergeAssign(base, src, key, context) {
   }
 
   if (ReplaceOp.isOperation(sVal)) {
-    return ReplaceOp.perform({base,bKey,sVal,context});
+    return ReplaceOp.perform({ base, bKey, sVal, context });
   }
 
   return mergeObject(bVal, sVal, context);
@@ -233,21 +242,21 @@ const ConfigPointFunctionality = {
    * Directly modifies this.
    */
   applyExtensions() {
-    if( this._preExistingKeys ) {
-      for(const key of Object.keys(this)) {
-        if( !this._preExistingKeys[key] ) delete this[key]; 
+    if (this._preExistingKeys) {
+      for (const key of Object.keys(this)) {
+        if (!this._preExistingKeys[key]) delete this[key];
       }
     } else {
       this._preExistingKeys = {};
-      this._preExistingKeys = Object.keys(this).reduce((keyset,key) => {
+      this._preExistingKeys = Object.keys(this).reduce((keyset, key) => {
         keyset[key] = true;
         return keyset;
       }, this._preExistingKeys);
     }
     this._applyExtensionsTo(this);
 
-    if( this.postOperation ) {
-      Object.values(this.postOperation).forEach( postOp => postOp() );
+    if (this.postOperation) {
+      Object.values(this.postOperation).forEach(postOp => postOp());
     }
   },
 
@@ -256,7 +265,7 @@ const ConfigPointFunctionality = {
    */
   _applyExtensionsTo(dest) {
     const configBase = this._configBase;
-    if( configBase && configBase._applyExtensionsTo ) {
+    if (configBase && configBase._applyExtensionsTo) {
       configBase._applyExtensionsTo(dest);
     } else {
       mergeObject(dest, configBase, dest);
@@ -302,17 +311,27 @@ const BaseImplementation = {
    */
   register(...config) {
     let ret = {};
-    config.forEach( (configItem) => {
-      if( isArray(configItem) ) {
-        ret = {...ret, ...this.register(...configItem)};
+    config.forEach((configItem) => {
+      if (isArray(configItem)) {
+        ret = { ...ret, ...this.register(...configItem) };
         return;
       }
-      const { configName, configBase, extension } = configItem;
-      if (configBase) {
-        ret[configName] = this.addConfig(configName, configBase);
-      }
-      if (extension) {
-        ret[configName] = this.addConfig(configName).extendConfig(extension);
+
+      const { configName } = configItem;
+      if (configName) {
+        const { configBase, extension } = configItem;
+        if (configBase) {
+          ret[configName] = this.addConfig(configName, configBase);
+        }
+        if (extension) {
+          ret[configName] = this.addConfig(configName).extendConfig(extension);
+        }
+      } else {
+        Object.keys(configItem).forEach(key => {
+          const extension = configItem[key];
+          const {configBase} = extension;
+          ret[key] = this.addConfig(key,configBase).extendConfig(extension);
+        });
       }
     });
     return ret;
@@ -323,16 +342,59 @@ const BaseImplementation = {
     return _configPoints[configName] != undefined;
   },
 
+  // Gets the given configuration name
+  getConfig(config) {
+    if (typeof config === 'string') {
+      return _configPoints[config];
+    }
+    return config;
+  },
+
   // Clear all configuration items, mostly used for test purposes.
   clear() {
     _configPoints = {};
   }
 };
 
-export const ConfigPoint = { name: 'ConfigPoint', ...BaseImplementation};
+/**
+ * Loads the given value, as specified by the parameter name path. 
+ * parameterName is a list of config-point files to load, named  [a-zA-Z0-9]+(\.((js)|(json)))?  Null means load the default
+ * The path is the required path prefix (automatically added), and the default name is what to use if nothing is specified.
+ * The defaultName parameter is NOT checked for validity, it is assumed to be allowed. 
+ */
+export const load = (defaultName, path, parameterName) => {
+  const queryString = window.location.search;
+  const urlParams = new URLSearchParams(queryString);
+  let loadNames = defaultName ? [defaultName] : null;
+  if (parameterName) {
+    const paramValues = urlParams.getAll(parameterName);
+    if (paramValues && paramValues.length) {
+      paramValues.forEach(item => {
+        if (!item.match(/^[a-zA-Z0-9]+$/)) {
+          throw new Error(`Parameter ${parameterName} has invalid value ${item}`);
+        }
+      });
+      loadNames = paramValues;
+    }
+  }
+  if (loadNames) {
+    loadNames.forEach(name => {
+      var oReq = new XMLHttpRequest();
+      oReq.addEventListener("load", () => {
+        const json = JSON5.parse(oReq.responseText);
+
+        const itemsRegistered = ConfigPoint.register(json);
+        // console.log('ConfigPoint:Loaded', name,'registered', itemsRegistered);
+      });
+      const url = (path && (path + '/' + name) || name) + '.json5';
+      oReq.open("GET", url);
+      oReq.send();
+    });
+  } else {
+    console.log("ConfigPoint: No names to load");
+  }
+};
+
+export const ConfigPoint = { name: 'ConfigPoint', ...BaseImplementation, load };
 
 export default ConfigPoint;
-
-// TODO - find a way to allow loading a safe list of configuration elements
-// Make this globally available for now until a better method is found
-// window.ConfigPoint = ConfigPoint;

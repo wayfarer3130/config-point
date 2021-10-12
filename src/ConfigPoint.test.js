@@ -98,14 +98,33 @@ describe('ConfigPoint.js', () => {
 
   describe('hasConfig()', () => {
     ConfigPoint.register({
-        configName: CONFIG_NAME,
-        configBase: BASE_CONFIG,
+      configName: CONFIG_NAME,
+      configBase: BASE_CONFIG,
     });
     expect(ConfigPoint.hasConfig(CONFIG_NAME)).toBe(true);
-    expect(ConfigPoint.hasConfig('notFound')).toBe(false);    
+    expect(ConfigPoint.hasConfig('notFound')).toBe(false);
   });
-  
+
   describe('register()', () => {
+    it('registers named child items', () => {
+      const { configOne, configTwo } = ConfigPoint.register({
+        configOne: {
+          a: 5,
+          b: [1, 2, 3],
+        },
+
+        configTwo: {
+          configBase: 'configOne',
+          a: 3,
+          b: [null, 5],
+        },
+      });
+      expect(configOne.a).toBe(5);
+      expect(configTwo.a).toBe(3);
+      expect(configTwo.b[1]).toBe(5);
+      expect(configTwo.b[2]).toBe(3);
+    });
+
     it('creates a base configuration', () => {
       const { testConfigPoint } = ConfigPoint.register({
         configName: CONFIG_NAME,
@@ -137,15 +156,45 @@ describe('ConfigPoint.js', () => {
       expect(testConfigPoint.multiply).toBe(_multiply);
     });
 
+    it('references ConfigPoint', () => {
+      const { one, two } = ConfigPoint.register({
+        one: {
+          refTwo: { configOperation: 'reference', source: 'two' }
+        },
+        two: {
+          refOne: { configOperation: 'reference', source: 'one' }
+        },
+      });
+      expect(one.refTwo).toBe(two);
+      expect(two.refOne).toBe(one);
+    });
+
+    it('references ConfigPoint source value', () => {
+      const { one, two } = ConfigPoint.register([
+        {
+          one: {
+            a: 3,
+          }
+        },
+        {
+          two: {
+            refA: { configOperation: 'reference', source: 'one', reference:"a" }
+          },
+        }
+      ]);
+      expect(two.refA).toBe(one.a);
+    });
+
+
     it('extends first, then creates base', () => {
       const { testConfigPoint } = ConfigPoint.register({
         configName: CONFIG_NAME,
         extension: MODIFY_CONFIG,
-      }, 
-      {
-        configName: CONFIG_NAME,
-        configBase: BASE_CONFIG,
-      });
+      },
+        {
+          configName: CONFIG_NAME,
+          configBase: BASE_CONFIG,
+        });
       expect(testConfigPoint).toMatchObject(MODIFY_MATCH);
 
     });
@@ -155,17 +204,17 @@ describe('ConfigPoint.js', () => {
         configName: CONFIG_NAME,
         configBase: BASE_CONFIG,
         extension: MODIFY_CONFIG,
-      }, 
-      {
-        configName: CONFIG_NAME+'2',
-        configBase: CONFIG_NAME,
-      });
+      },
+        {
+          configName: CONFIG_NAME + '2',
+          configBase: CONFIG_NAME,
+        });
       expect(testConfigPoint2).toMatchObject(MODIFY_MATCH);
 
     });
 
     it('Throws on extend of same instance', () => {
-      expect( () => {
+      expect(() => {
         ConfigPoint.register({
           configName: CONFIG_NAME,
           configBase: CONFIG_NAME,
@@ -174,25 +223,26 @@ describe('ConfigPoint.js', () => {
     });
 
     it('Throws on extend twice', () => {
-      expect( () => ConfigPoint.register({
-          configName: CONFIG_NAME,
-          extension: {name:'name',},
-        },
+      expect(() => ConfigPoint.register({
+        configName: CONFIG_NAME,
+        extension: { name: 'name', },
+      },
         {
           configName: CONFIG_NAME,
-          extension: {name:'name',},
+          extension: { name: 'name', },
         })).toThrow();
     });
 
   });
-  
+
+
   describe('configOperation()', () => {
     it('DeleteOp', () => {
       const { testConfigPoint } = ConfigPoint.register({
         configName: CONFIG_NAME,
         configBase: {
           toBeDeleted: true,
-          list: [0,1,2,3],
+          list: [0, 1, 2, 3],
         },
         extension: {
           toBeDeleted: DeleteOp.create(1),
@@ -200,11 +250,11 @@ describe('ConfigPoint.js', () => {
         },
       });
       expect(testConfigPoint.toBeDeleted).toBe(undefined);
-      expect(testConfigPoint.list).toMatchObject([0,2,3]);
+      expect(testConfigPoint.list).toMatchObject([0, 2, 3]);
     });
 
     it('ReferenceOp', () => {
-      const nonReference = {reference:'preExistingItem', };
+      const nonReference = { reference: 'preExistingItem', };
       const { testConfigPoint } = ConfigPoint.register({
         configName: CONFIG_NAME,
         configBase: {
@@ -212,7 +262,7 @@ describe('ConfigPoint.js', () => {
           reference: ReferenceOp.createCurrent('preExistingItem'),
         },
         extension: {
-          reference2: {configOperation: 'reference', reference: 'reference'},
+          reference2: { configOperation: 'reference', reference: 'reference' },
           nonReference,
         },
       });
@@ -230,12 +280,12 @@ describe('ConfigPoint.js', () => {
       expect(created.arr).toEqual([1, 1.5, 2, 3]);
     });
 
-    it('SortOp', () => {
+    it('SortOp basics', () => {
       const srcPrimitive = [3, 1, 2];
-      const srcArray = [{value: 3, priority: 1}, {value:2, priority: 2}, {value:1, priority:3}];
-      const srcObject = {three:{value: 3, priority: 1}, two:{value:2, priority: 2}, one:{value:1, priority:3}};
-      const srcFour = {value: 4, priority: 0};
-      const configBase = { 
+      const srcArray = [{ value: 3, priority: 1 }, { value: 2, priority: 2 }, { value: 1, priority: 3 }];
+      const srcObject = { three: { value: 3, priority: 1 }, two: { value: 2, priority: 2 }, one: { value: 1, priority: 3 } };
+      const srcFour = { value: 4, priority: 0 };
+      const configBase = {
         srcPrimitive, srcArray, srcObject,
         sortPrimitive: SortOp.createSort('srcPrimitive'),
         sortArray: SortOp.createSort('srcArray', 'priority', 'value'),
@@ -248,20 +298,19 @@ describe('ConfigPoint.js', () => {
           configBase,
         },
         {
-          configName: 'testConfigPoint2',
-          configBase: CONFIG_NAME,
-          extension: {
-            srcPrimitive: [InsertOp.at(0,4)],
-            srcObject: {srcFour, three: {priority: 4}, two: {priority: null}}
+          testConfigPoint2: {
+            configBase: CONFIG_NAME,
+            srcPrimitive: [InsertOp.at(0, 4)],
+            srcObject: { srcFour, three: { priority: 4 }, two: { priority: null } }
           },
         },
       );
-      expect(testConfigPoint.sortPrimitive).toMatchObject([1,2,3]);
-      expect(testConfigPoint.sortArray).toMatchObject([3,2,1]);
+      expect(testConfigPoint.sortPrimitive).toMatchObject([1, 2, 3]);
+      expect(testConfigPoint.sortArray).toMatchObject([3, 2, 1]);
       expect(testConfigPoint.sortObject).toMatchObject([srcObject.three, srcObject.two, srcObject.one]);
       expect(testConfigPoint.sortMissing).toMatchObject([]);
-      expect(testConfigPoint2.sortPrimitive).toMatchObject([1,2,3,4]);
-      expect(testConfigPoint2.sortObject).toMatchObject([srcFour, srcObject.one, {...srcObject.three, priority: 4}]);
+      expect(testConfigPoint2.sortPrimitive).toMatchObject([1, 2, 3, 4]);
+      expect(testConfigPoint2.sortObject).toMatchObject([srcFour, srcObject.one, { ...srcObject.three, priority: 4 }]);
     });
 
   });
