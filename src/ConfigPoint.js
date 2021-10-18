@@ -5,121 +5,7 @@ import JSON5 from 'json5';
  * This is implicitly updated by the add/update configuration values.
  */
 let _configPoints = {};
-
-const configOperation = (configOperation, props) => ({
-  configOperation,
-  isOperation(src) { return (src && src.configOperation == this.configOperation) },
-  create(props) { return { ...props, configOperation: this.configOperation }; },
-  at(position, value, props) { return this.create({ ...props, position, value }) },
-  ...props,
-});
-
-// Indicates that this is the default configuration operation
-export const InsertOp = configOperation('insert', {
-  perform({ sVal, base, context }) {
-    if (sVal.position != null) {
-      base.splice(sVal.position, 0, mergeCreate(sVal.value, context));
-    }
-    return base;
-  },
-});
-
-// Indicates that this is a delete or remove operation
-export const DeleteOp = configOperation('delete', {
-  perform({ base, bKey, sVal }) {
-    if (isArray(base)) {
-      base.splice(sVal.position, 1);
-    } else {
-      delete base[bKey];
-    }
-    return base;
-  },
-});
-
-/**
-  * Reference to other values operation.
-  * createCurrent creates an object the references the current ConfigPoint value, with the form:
-  *    configOperation: 'reference',
-  *    reference: 'nameOfReference'
-  *    source?: where the object is coming from, 'ConfigPoint' means it is an external config point object
-  * By default the reference value refers to an item in the current "context", which is usually a base value of the current
-  * configuration item being created.  It is 
-  * Warning: There is no ordering to the reference within a given set of object creates.  That means you cannot
-  * necessarily reference something created in the configuration object, only pre-existing objects should be
-  * referenced.
-  * For ConfigPoint references, a value will be created if one does not exist.
-  */
-export const ReferenceOp = configOperation('reference', {
-  createCurrent(reference) { return { reference, configOperation: this.configOperation }; },
-  perform({ sVal, context }) {
-    const {preTransform, transform, source, reference} = sVal;
-    const useContext = source ? ConfigPoint.addConfig(source) : context;
-    if( source && !reference ) return useContext;
-    const baseCreate = mergeCreate(useContext && useContext[reference], context);
-    const original = preTransform && preTransform(baseCreate,sVal,context) || baseCreate; 
-    if( transform && context) {
-      if (!context.postOperation) context.postOperation = [];
-      // TODO - fix this, it really isn't right yet.
-      context.postOperation.push(() => mergeCreate(useContext && useContext[reference], context));
-    }
-    return original;
-  },
-});
-
-/**
-  * Indicates that this is a reference operation.
-  */
-export const ReplaceOp = configOperation('replace', {
-  perform({ sVal, context, base, bKey }) {
-    return base[bKey] = mergeCreate(sVal, context);
-  },
-});
-
-/**
- * Indicates that this is a sort operation operation.
- * A sort operation takes the parameters:
- *    valueReference - the attribute name to extract as the value, if not provided, defaults to the entire object
- *    sortKey - the attribute name to sort on.  If not provided, defaults to the value object
- *    reference - the attribute that this instance copies for the source material
- * The sorting is performed on the referenced value, which can be a list or an object.  If an object, then all values
- * from the object are considered to be part of the initial sort order.
-*/
-export const SortOp = configOperation('sort', {
-  createSort(reference, sortKey, valueReference, props) {
-    return this.create({ ...props, reference, sortKey, valueReference });
-  },
-  performSort(original, sVal, context) {
-    const { valueReference, sortKey, reference } = sVal;
-    if (reference == undefined) throw Error('reference isn\'t defined');
-    const referenceValue = context[reference];
-    const compare = (a, b) => {
-      const valueA = valueReference ? a[valueReference] : a;
-      const valueB = valueReference ? b[valueReference] : b;
-      const sortA = sortKey ? a[sortKey] : valueA;
-      const sortB = sortKey ? b[sortKey] : valueB;
-      if (sortA === sortB) return 0;
-      return sortA < sortB ? -1 : 1;
-    };
-    if (!referenceValue) return original;
-    let result = Object.values(referenceValue).filter(value => (value != null && (!valueReference || value[valueReference])));
-    if (sortKey) {
-      result = result.filter(value => value[sortKey] !== null);
-    }
-    result.sort(compare);
-    result = result.map(item => (valueReference ? item[valueReference] : item));
-    original.splice(0, original.length, ...result);
-    return original;
-  },
-  perform({ sVal, context }) {
-    if (context) {
-      if (!context.postOperation) context.postOperation = [];
-      let original = [];
-      context.postOperation.push(this.performSort.bind(context, original, sVal, context));
-      return original;
-    }
-    return [];
-  },
-});
+const _rootConfigPoints = {};
 
 /**
  * Indicates if any is a primitive value, eg not an object or function.
@@ -132,6 +18,21 @@ function isPrimitive(val) {
   return val === null || val === undefined || tof == 'number' || tof == 'boolean' || tof == 'string' || tof == 'bigint';
 }
 
+/**
+ * 
+ * @param {string|int} key 
+ * @returns undefined or the operation looked up
+ */
+const getOpValue = (sVal) => {
+  if( !sVal || !sVal.configOperation || sVal.isHidden ) return;
+  const { configOperation } = sVal;
+  const ret = ConfigPoint.ConfigPointOperation[configOperation];
+  if( !ret ) {
+    console.log('configOperation', configOperation,'specified but not defined - might be lazy defined later');
+  }
+  return ret;
+};
+
 /** Creates an object of the same type as src, but as a new copy so that it can be 
  * modified later on.
  * For reference instances, creates a copy of the referenced object.
@@ -140,13 +41,6 @@ function isPrimitive(val) {
  * Functions, returns the original function (TBD on how to copy those)
  */
 export const mergeCreate = function (sVal, context) {
-  if (ReferenceOp.isOperation(sVal)) {
-    return ReferenceOp.perform({ sVal, context });
-  }
-  if (SortOp.isOperation(sVal)) {
-    return SortOp.perform({ sVal, context });
-  }
-
   if (isPrimitive(sVal)) {
     return sVal;
   }
@@ -156,20 +50,12 @@ export const mergeCreate = function (sVal, context) {
     return sVal;
   }
   if (tof === 'object') {
-    return mergeObject(isArray(sVal) ? [] : {}, sVal, context);
+    return mergeObject(Array.isArray(sVal) ? [] : {}, sVal, context);
   }
   throw new Error(`The value ${sVal} of type ${tof} isn't a known type for merging.`);
 }
 
-// Returns the relevant key to use, current, just returns key itself.
-function mergeKey(base, key) {
-  return key;
-}
-
-/** Indiciates of the object is an array. */
-function isArray(src) {
-  return typeof (src) == 'object' && typeof (src.length) == 'number';
-}
+const mergeKey = (base,key,context) => key;
 
 /**
  * Merges into base[key] the value from src[key], if any.  This can end up remove
@@ -181,25 +67,44 @@ function isArray(src) {
  * @returns 
  */
 export function mergeAssign(base, src, key, context) {
-  const bKey = mergeKey(base, key, context);
-  const bVal = base[bKey];
+  let bKey = mergeKey(base, key, context);
+  let bVal = base[bKey];
   let sVal = src[key];
-  if (DeleteOp.isOperation(sVal)) {
-    return DeleteOp.perform({ sVal, base, bKey, key });
+  const opValue = getOpValue(sVal);
+  
+  if( opValue ) {
+    if( opValue.immediate ) {
+      return opValue.immediate( {sVal, base, bKey, key, context} );
+    } else {
+      const bKeyHidden = '_'+bKey;
+      const bValHidden = base[bKeyHidden] || {...sVal,isHidden: true};
+      Object.defineProperty(base,bKey, {
+        configurable: true, 
+        enumerable: true,
+        get: () => {
+          const opSrc = base[bKeyHidden];
+          if( opSrc.value!==undefined ) return opSrc.value;
+          opSrc.value = opValue.getter( {base, bKey, key, context, bKeyHidden} );
+          return opSrc.value;
+        },
+      });
+      // Make the background variable hidden by default on the final destination object
+      Object.defineProperty(base, bKeyHidden, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: bValHidden,
+      });
+      if( src.value===undefined ) src.value = undefined;
+      bKey = '_'+bKey;
+      bVal = base[bKey];
+    }
   }
 
-  if (isArray(bVal) && sVal == null) return base;
-
-  if (InsertOp.isOperation(sVal)) {
-    return InsertOp.perform({ sVal, base, context });
-  }
+  if (Array.isArray(bVal) && sVal == null) return base;
 
   if (isPrimitive(bVal)) {
     return base[bKey] = mergeCreate(sVal, context);
-  }
-
-  if (ReplaceOp.isOperation(sVal)) {
-    return ReplaceOp.perform({ base, bKey, sVal, context });
   }
 
   return mergeObject(bVal, sVal, context);
@@ -262,10 +167,6 @@ const ConfigPointFunctionality = {
       }, this._preExistingKeys);
     }
     this._applyExtensionsTo(this);
-
-    if (this.postOperation) {
-      Object.values(this.postOperation).forEach(postOp => postOp());
-    }
   },
 
   /** Applies the extensions from this object to the given result.  Allows for applying nested parent extensions,
@@ -298,6 +199,11 @@ const BaseImplementation = {
     let config = _configPoints[configName];
     if (!config) {
       _configPoints[configName] = config = Object.assign({}, ConfigPointFunctionality);
+      Object.defineProperty(this,configName, {
+        enumerable: true,
+        configurable: true,
+        get: () => { return _configPoints[configName]},
+      });
       config._configBase = configBase;
       config._extensions = { _order: [] };
     } else if (configBase) {
@@ -320,7 +226,7 @@ const BaseImplementation = {
   register(...config) {
     let ret = {};
     config.forEach((configItem) => {
-      if (isArray(configItem)) {
+      if (Array.isArray(configItem)) {
         ret = { ...ret, ...this.register(...configItem) };
         return;
       }
@@ -361,7 +267,16 @@ const BaseImplementation = {
   // Clear all configuration items, mostly used for test purposes.
   clear() {
     _configPoints = {};
-  }
+    Object.keys(_rootConfigPoints).forEach(key => {
+      this.register(_rootConfigPoints);
+    });
+  },
+
+  // Registers a root config point - one that doesn't get cleared otherwise
+  registerRoot(root) {
+    Object.assign(_rootConfigPoints, root);
+    return ConfigPoint.register(root);
+  },
 };
 
 /**

@@ -1,4 +1,4 @@
-import { ConfigPoint, InsertOp, DeleteOp, ReferenceOp, SortOp, safeFunction } from './index.js';
+import { ConfigPoint, ConfigPointOperation, DeleteOp, ReplaceOp, ReferenceOp, SortOp, InsertOp, safeFunction } from './index.js';
 // Import for testing internals
 import { mergeCreate, mergeObject } from './ConfigPoint.js';
 
@@ -183,17 +183,17 @@ describe('ConfigPoint.js', () => {
     });
 
     it('references context value', () => {
-      const _multiply = (a, b) => a * b;
+      const multiplyFunc = (a, b) => a * b;
       const registered = ConfigPoint.register([{
         configName: CONFIG_NAME,
         configBase: {
-          _multiply,
-          multiply: { configOperation: 'reference', reference: '_multiply' },
+          multiplyFunc,
+          multiply: { configOperation: 'reference', reference: 'multiplyFunc' },
         },
         extension: MODIFY_CONFIG,
       }]);
       const { testConfigPoint } = registered;
-      expect(testConfigPoint.multiply).toBe(_multiply);
+      expect(testConfigPoint.multiply).toBe(multiplyFunc);
     });
 
     it('references ConfigPoint', () => {
@@ -293,6 +293,19 @@ describe('ConfigPoint.js', () => {
       expect(testConfigPoint.list).toMatchObject([0, 2, 3]);
     });
 
+    it('ReplaceOp', () => {
+      const { testConfigPoint } = ConfigPoint.register({
+        configName: CONFIG_NAME,
+        configBase: {
+          list: [0, 1, 2, 3],
+        },
+        extension: {
+          list: [ReplaceOp.at(1,4)],
+        },
+      });
+      expect(testConfigPoint.list).toMatchObject([0, 4, 2, 3]);
+    });
+
     it('ReferenceOp', () => {
       const nonReference = { reference: 'preExistingItem', };
       const { testConfigPoint } = ConfigPoint.register({
@@ -327,7 +340,7 @@ describe('ConfigPoint.js', () => {
       const srcFour = { value: 4, priority: 0 };
       const configBase = {
         srcPrimitive, srcArray, srcObject,
-        sortPrimitive: SortOp.createSort('srcPrimitive'),
+        sortPrimitive: ConfigPointOperation.sort.createSort('srcPrimitive'),
         sortArray: SortOp.createSort('srcArray', 'priority', 'value'),
         sortObject: SortOp.createSort('srcObject', 'priority'),
         sortMissing: SortOp.createSort('srcMissing', 'priority'),
