@@ -1,4 +1,4 @@
-import { ConfigPoint, InsertOp, DeleteOp, ReferenceOp, SortOp } from './index.js';
+import { ConfigPoint, InsertOp, DeleteOp, ReferenceOp, SortOp, safeFunction } from './index.js';
 // Import for testing internals
 import { mergeCreate, mergeObject } from './ConfigPoint.js';
 
@@ -41,6 +41,46 @@ describe('ConfigPoint.js', () => {
   beforeEach(() => {
     ConfigPoint.clear();
     jest.clearAllMocks();
+  });
+
+  describe('safeFunction()', () => {
+    it('evaluates local variables in an expr', () => {
+      const fn = safeFunction('a==="eh" || Math.abs(b)>=3');
+      expect(fn({a:null,b:1})).toBe(false);
+      expect(fn({a:"eh"})).toBe(true);
+      expect(fn({a:null,b:-25})).toBe(true);
+    });
+    it('throws on window refs', () => {
+      const fn = safeFunction('window.alert("Hello")');
+      expect(() => fn({a:null,b:1})).toThrow();
+    });
+
+    it('works as a reference transform', () => {
+      const {cp1,cp2} = ConfigPoint.register([
+        {
+          cp1: {
+            configBase: {
+              func: {configOperation: 'reference', reference: 'funcText', transform: safeFunction},
+              funcText: 'a+1',
+            },
+            funcText: 'a-1',
+          },
+          cp2: {
+            configBase: {
+              func: {configOperation: 'reference', reference: 'funcText', transform: safeFunction},
+              funcText: 'a+1',
+            },
+          },
+        },
+        {
+          cp2: {
+            funcText: 'a-1',
+          },
+        },
+      ]);
+      expect(cp1.func({a:0})).toBe(-1);
+      expect(cp2.func({a:0})).toBe(-1);
+    });
   });
 
   describe('mergeCreate()', () => {
@@ -178,7 +218,7 @@ describe('ConfigPoint.js', () => {
         },
         {
           two: {
-            refA: { configOperation: 'reference', source: 'one', reference:"a" }
+            refA: { configOperation: 'reference', source: 'one', reference:'a' }
           },
         }
       ]);

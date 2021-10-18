@@ -111,27 +111,55 @@ ConfigPoint.register([{
 
 ![Sequence for extension of ConfigPoint](./sequence/ConfigPointStudyListExtension.png)
 
-#### Future
-There are a number of possibilities for more complex extension of ConfigPoints.
+##### Delete
+A delete operation can be done either by index, or by value name.  Either a single item
+or an item within a list can be deleted.
+```js
+toBeDeleted: DeleteOp.create(1)
+list: [DeleteOp.at(1)]
+```
 
-##### Delete and Replace
-A delete operation is certainly a required operation in order to allow removal
-of items.  Similarly, a replace operation is a useful combination of delete +
-add in the same location.
+##### Replace
+Replacing an item within a list can be done either simple value replacement, or by reference a list item position, 
+for example:
+```js
+toBeReplaced: "new value",
+list: [null,'new value at posn 1'],
+list: {1: 'new value'},
+```
 
 #### Sorted Lists and Indexed keys
 Instead of referencing simple list values, the ability to create a sorted list
 from a set of objects is quite useful.  This allows directly applying values to
 named sets, instead of having to know about positional values.  For example:
 ```js
-// Indexed delete
-{ _extendOp: 'delete',
-  key: { title: 'Title to delete' }
-}
-// Source object to create a list from
-someSource: {a: {priority:2}, b: {priority:1} };
-// Sorted object is on priority and produces [{priority:1}, {priority:2}]
-sortedList: { _extendOp: 'sorted', _reference: 'someSource', sortKey: 'priority' }
+      const srcObject = { three: { value: 3, priority: 1 }, two: { value: 2, priority: 2 }, one: { value: 1, priority: 3 } };
+      const configBase = {
+        srcObject,
+        sortObject: SortOp.createSort('srcObject', 'priority'),
+      };
+      ... register config
+      {
+          testConfigPoint2: {
+            configBase: CONFIG_NAME,
+            srcObject: { srcFour, three: { priority: 4 }, two: { priority: null } }     
+```
+This will move the item three, add srcFour to the list, and remove item two (priority null).
+
+#### Reference and Transform Objects
+It is possible to reference another object within the current context root, or the general ConfigPoint object.
+The timing of this is done at the time the config point configuration is generated, so the ordering of adding
+extensions is, unfortunately, important.
+To reference another part of the same config point, and then transform it with the given transform function, use
+the following javascript - this will work in JSON provided the transform isn't present.)  
+```js
+{ configOperation: 'reference', reference: 'itemSrc', transform: transformFunction },
+```
+
+To reference another ConfigPoint, use the syntax below.  Note that the object will be the literal reference object, so
+it will be affected by future updates.
+```js
+{ configOperation: 'reference', source: 'BrainLabellingData' },
 ```
 
 ### Usage API
@@ -156,6 +184,16 @@ const myReactFunction = ({configPoint,...}) => {
      // a child should use
      {childConfigPoint.reactFunction({configPoint:childConfigPoint})}
      </td>);
+```
+
+A more direct naming declaration works as:
+```js
+const {MyConfigPoint} = ConfigPoint.register({
+  MyConfigPoint: { configBase: { ... base configuration }
+     ...extension configuration
+  }
+});
+
 ```
 
 ![Config Point Study List Usage](./sequence/ConfigPointStudyListUsage.png)

@@ -52,9 +52,17 @@ export const DeleteOp = configOperation('delete', {
 export const ReferenceOp = configOperation('reference', {
   createCurrent(reference) { return { reference, configOperation: this.configOperation }; },
   perform({ sVal, context }) {
-    const useContext = sVal.source ? ConfigPoint.addConfig(sVal.source) : context;
-    if( sVal.source && !sVal.reference ) return useContext;
-    return mergeCreate(useContext && useContext[sVal.reference], context);
+    const {preTransform, transform, source, reference} = sVal;
+    const useContext = source ? ConfigPoint.addConfig(source) : context;
+    if( source && !reference ) return useContext;
+    const baseCreate = mergeCreate(useContext && useContext[reference], context);
+    const original = preTransform && preTransform(baseCreate,sVal,context) || baseCreate; 
+    if( transform && context) {
+      if (!context.postOperation) context.postOperation = [];
+      // TODO - fix this, it really isn't right yet.
+      context.postOperation.push(() => mergeCreate(useContext && useContext[reference], context));
+    }
+    return original;
   },
 });
 
@@ -82,7 +90,7 @@ export const SortOp = configOperation('sort', {
   },
   performSort(original, sVal, context) {
     const { valueReference, sortKey, reference } = sVal;
-    if (reference == undefined) throw Error('reference isnt defined');
+    if (reference == undefined) throw Error('reference isn\'t defined');
     const referenceValue = context[reference];
     const compare = (a, b) => {
       const valueA = valueReference ? a[valueReference] : a;
