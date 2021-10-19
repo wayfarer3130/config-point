@@ -115,7 +115,7 @@ const SortOp = configOperation('sort', {
 export const SafeOp = configOperation('safe', {
   createCurrent(reference,props) { return this.create({ reference, ...props  });  },
   getter({ base, context, bKeyHidden }) {
-    const {reference, transform, source} = base[bKeyHidden];
+    const {reference, source} = base[bKeyHidden];
     const useContext = source ? ConfigPoint.addConfig(source) : context;
     if( reference===bKeyHidden ) throw new Error(`Reference ${reference} and internal key ${bKeyHidden} must be different`);
     if( !useContext ) return;

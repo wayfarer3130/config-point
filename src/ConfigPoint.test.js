@@ -43,6 +43,49 @@ describe('ConfigPoint.js', () => {
     jest.clearAllMocks();
   });
 
+  describe('load()', () => {
+    it('loads theme', () => {
+      let onopen
+      const xhrMock = {
+        open: jest.fn(),
+        send: jest.fn(),
+        addEventListener: (name,func) => { onopen = func; },
+        readyState: 4,
+        status: 200,
+        responseText: '{ newConfigPoint: { val: 5 }, // Comment \n}'
+      };
+    
+      jest.spyOn(window, 'XMLHttpRequest').mockImplementation(() => xhrMock);
+      const callback = jest.fn();
+
+      ConfigPoint.load('theme');
+
+      expect(xhrMock.open).toBeCalledWith('GET', 'theme.json5');
+      onopen();
+      expect(ConfigPoint.newConfigPoint.val).toBe(5);
+    });
+
+    it('loads argument themes', () => {
+      let onopen
+      const xhrMock = {
+        open: jest.fn(),
+        send: jest.fn(),
+        addEventListener: (name,func) => { onopen = func; },
+        readyState: 4,
+        status: 200,
+        responseText: '{ newConfigPoint: { val: 5 }, // Comment \n}'
+      };
+    
+      jest.spyOn(window, 'XMLHttpRequest').mockImplementation(() => xhrMock);
+      const callback = jest.fn();
+      ConfigPoint.load('theme', '/theme', 'theme');
+
+      expect(xhrMock.open).toBeCalledWith('GET', '/theme/altTheme.json5');
+      onopen();
+      expect(ConfigPoint.getConfig('newConfigPoint').val).toBe(5);
+    });
+  });
+
   describe('safeFunction()', () => {
     it('evaluates local variables in an expr', () => {
       const fn = safeFunction('a==="eh" || Math.abs(b)>=3');
@@ -80,6 +123,36 @@ describe('ConfigPoint.js', () => {
       ]);
       expect(cp1.func({a:0})).toBe(-1);
       expect(cp2.func({a:0})).toBe(-1);
+    });
+
+
+    it('works as a named transform', () => {
+      const {cp1,cp2} = ConfigPoint.register([
+        {
+          cp1: {
+            configBase: {
+              func: {configOperation: 'safe', reference: 'funcText'},
+              funcText: 'a+1',
+            },
+            funcText: 'a-1',
+          },
+          cp2: {
+            configBase: {
+              func: ConfigPointOperation.safe.createCurrent('funcText'),
+              funcText: 'a+1',
+            },
+          },
+        },
+        {
+          cp2: {
+            funcText: 'a-1',
+          },
+        },
+      ]);
+      expect(cp1.func({a:0})).toBe(-1);
+      expect(cp2.func({a:0})).toBe(-1);
+      // Check that it is idempotent
+      expect(cp2.func===cp2.func).toBe(true);
     });
   });
 
@@ -334,7 +407,7 @@ describe('ConfigPoint.js', () => {
     });
 
     it('SortOp basics', () => {
-      const srcPrimitive = [3, 1, 2];
+      const srcPrimitive = [3, 1, 2, 2];
       const srcArray = [{ value: 3, priority: 1 }, { value: 2, priority: 2 }, { value: 1, priority: 3 }];
       const srcObject = { three: { value: 3, priority: 1 }, two: { value: 2, priority: 2 }, one: { value: 1, priority: 3 } };
       const srcFour = { value: 4, priority: 0 };
@@ -358,11 +431,11 @@ describe('ConfigPoint.js', () => {
           },
         },
       );
-      expect(testConfigPoint.sortPrimitive).toMatchObject([1, 2, 3]);
+      expect(testConfigPoint.sortPrimitive).toMatchObject([1, 2, 2, 3]);
       expect(testConfigPoint.sortArray).toMatchObject([3, 2, 1]);
       expect(testConfigPoint.sortObject).toMatchObject([srcObject.three, srcObject.two, srcObject.one]);
       expect(testConfigPoint.sortMissing).toMatchObject([]);
-      expect(testConfigPoint2.sortPrimitive).toMatchObject([1, 2, 3, 4]);
+      expect(testConfigPoint2.sortPrimitive).toMatchObject([1, 2, 2, 3, 4]);
       expect(testConfigPoint2.sortObject).toMatchObject([srcFour, srcObject.one, { ...srcObject.three, priority: 4 }]);
     });
 
